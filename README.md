@@ -1,22 +1,23 @@
 # Smart Drying System for Sardines
 
-This project uses an ATMEGA328P microcontroller to control an LCD display for a sardine drying system. The code initializes a LiquidCrystal LCD and provides a helper function to display messages on the screen.
+This project uses an ATMEGA328P microcontroller to automate the drying process for sardines. It includes:
 
-## Main Features
+- LCD display (with PC8574 chip)
+- Fan circuit
+- Heater circuit (controlled by relay)
+- Microcontroller logic
 
-- LCD initialization and backlight control
-- Simple function to print messages to the LCD at any position
+## Simulation
+Proteus simulation files are in the `proteus_circuit` folder. These files show the full circuit setup, including microcontroller, fan, heater, relay, and LCD display.
 
-## Usage
-
-- To display a message, use: `writeInLcd(col, row, "Your Message")`
+## Code Usage
+- LCD initialization and message display via `writeInLcd(col, row, "Your Message")`
 - Example: `writeInLcd(0, 0, "Hello World")`
 
 ## Getting Started
-
 1. Upload `Main.ino` to your ATMEGA328P board.
-2. Connect the LCD as specified in the code.
-3. The LCD will show "Starting..." on boot.
+2. Use the Proteus files to simulate the circuit before hardware implementation.
+3. Connect components as shown in the simulation.
 
 ---
-For further development, add sensor and actuator code as needed for temperature and humidity control.
+For further development, add sensor and actuator code for temperature and humidity control.
