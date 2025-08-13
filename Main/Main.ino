@@ -15,8 +15,8 @@ DHT dht(DHTPIN, DHTTYPE);
 void writeInLcd(int col, int row, String message);
 
 // Thresholds
-const float TEMP_LOW = 40.0;    // Lower threshold in °C
-const float TEMP_HIGH = 50.0;   // Upper threshold in °C
+const float TEMP_LOW = 35.0;    // Lower threshold in °C
+const float TEMP_HIGH = 45.0;   // Upper threshold in °C
 bool fanState = false;          // Track fan status
 
 void setup() {
