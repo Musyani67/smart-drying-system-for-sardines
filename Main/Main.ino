@@ -3,9 +3,10 @@
 #include <Wire.h>
 
 // Pin configuration
-#define DHTPIN 7          // DHT sensor connected to pin 3
+#define DHTPIN 7          // DHT sensor connected to pin 7
 #define FAN_PIN 6        // Fan control pin
 #define DHTTYPE DHT11     // Change to DHT11 if using DHT11
+#define HEATER_PIN 11
 
 LiquidCrystal_I2C lcd(0x27, 16, 2); // LCD address 0x27
 
@@ -28,7 +29,10 @@ void setup() {
   delay(1000);
 
   pinMode(FAN_PIN, OUTPUT);
-  digitalWrite(FAN_PIN, LOW);
+  digitalWrite(FAN_PIN, LOW); // Fan OFF initially
+
+  pinMode(HEATER_PIN, OUTPUT);
+  digitalWrite(HEATER_PIN, LOW); // Heater OFF initially
 }
 
 void loop() {
@@ -60,6 +64,19 @@ void loop() {
   // Display fan status
   String fanStatus = fanState ? "Fan: ON " : "Fan: OFF";
   writeInLcd(0, 1, fanStatus);
+  lcd.clear();
+
+  String heaterStatus;
+  // Heater control logic
+    if (temperature <=TEMP_LOW) {
+    digitalWrite(HEATER_PIN, HIGH); // Heater ON
+    heaterStatus = "Heater ON";
+  } 
+  else if (temperature >= TEMP_HIGH) {
+    digitalWrite(HEATER_PIN, LOW); // Heater OFF
+    heaterStatus = "Heater OFF";
+  }
+  writeInLcd(0, 0, heaterStatus);
 
   delay(1500);
 }
