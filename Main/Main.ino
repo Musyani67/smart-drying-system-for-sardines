@@ -1,133 +1,113 @@
+#include <Arduino.h>
 #include <DHT.h>
+#include <HX711.h>
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
-#include <HX711.h>
 
-// Pin configuration
-#define DHTPIN 7          // DHT sensor connected to pin 7
-#define FAN_PIN 6        // Fan control pin
-#define DHTTYPE DHT11     // Change to DHT11 if using DHT11
-#define HEATER_PIN 11
-#define LD_Cell_DO_PIN  13
-#define LD_Cell_CK_PIN 12
+#define DHT_PIN 7
+#define DHT_TYPE DHT11
+#define FAN_PIN 6
+#define HTR_PIN 11
+#define LD_DO 13
+#define LD_CLK 12
 
-LiquidCrystal_I2C lcd(0x27, 16, 2); // LCD address 0x27
+DHT dht(DHT_PIN, DHT_TYPE);
+HX711 scale;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-DHT dht(DHTPIN, DHTTYPE);
+// Global variables
+boolean dhtStatus, fanStatus, htrStatus, timeStatus, weightStatus;  // Control statuses
+float intialWeight, currentWeight, finalWeight, temp, humidity, calibratedFactor, rawValue, weightLoss;
+const float highTemp = 45;  // Threshold values
+const float lowTemp = 35;   
+String dhtStr, fanHtrStr, cellStr, lossStr;   // Control Strings for display
+unsigned long currentMillis = 0;    // Timer variables
+unsigned long lastActionDHT = 0;
+unsigned long lastActionCell = 0;
 
 // Function declaration
-void writeInLcd(int col, int row, String message);
-
-// Thresholds
-const float TEMP_LOW = 35.0;    // Lower threshold in °C
-const float TEMP_HIGH = 45.0;   // Upper threshold in °C
-bool fanState = false;          // Track fan status
-
-//Load cell
-HX711 scale;  
-const float Calib_factor = 0.0001;
-float initialWeight = 0.0;
-bool initialWeightTaken = false;
+void displayInLcd(int col, int row, String message);
+boolean afterSeconds(unsigned long seconds);
 
 void setup() {
-  dht.begin();
-  
-  lcd.init();
-  lcd.backlight();
-  writeInLcd(0, 0, "Starting....");
-  delay(1000);
+    dht.begin();
+    Serial.begin(9600); // for debugging
+    lcd.init();
+    lcd.backlight();
 
-  pinMode(FAN_PIN, OUTPUT);
-  digitalWrite(FAN_PIN, LOW); // Fan OFF initially
+    pinMode(HTR_PIN, OUTPUT);
+    pinMode(FAN_PIN, OUTPUT);
 
-  pinMode(HEATER_PIN, OUTPUT);
-  digitalWrite(HEATER_PIN, LOW); // Heater OFF initially
+    displayInLcd(0, 0, "Booting...");
+    displayInLcd(0, 1, "Put 1 on scale");
+    delay(5000);
 
-  //Load Cell
-  scale.set_scale(Calib_factor);
-  scale.tare();
-  Serial.println("Place the sardines on the scale to record the initial Weight");
-   writeInLcd(0, 0, "Place sardines to record initial Weight");
+    scale.begin(LD_DO, LD_CLK);
+    scale.set_scale(scale.read());
+    lcd.clear();
+    displayInLcd(0, 0, "Insert the load");
+    delay(5000);
+    intialWeight = scale.get_units(5);
+    // Serial.println(scale.read());
+    // Serial.println(intialWeight);
 }
 
 void loop() {
-  lcd.clear();
-  float humidity = dht.readHumidity();
-  float temperature = dht.readTemperature();
+    temp = dht.readTemperature();
+    humidity = dht.readHumidity();
+    currentWeight = scale.get_units(5);
+    currentMillis = millis();
 
-  //Load cell
-  float currentWeight = scale.get_units(10);
-
-  if (isnan(humidity) || isnan(temperature)) {
-    lcd.clear();
-    writeInLcd(0, 0, "Sensor Error!");
-    delay(1500);
-    return;
-  }
-
-  // Display temperature and humidity
-  lcd.clear();
-  String tempStr = "T:" + String(temperature, 1) + (char)223 + "C H:" + String(humidity, 0) + "%";
-  writeInLcd(0, 0, tempStr);
-
-  // Fan control logic
-  if ((temperature > TEMP_HIGH) && !fanState) {
-    digitalWrite(FAN_PIN, HIGH);
-    fanState = true;
-  } else if ((temperature < TEMP_LOW) && fanState) {
-    digitalWrite(FAN_PIN, LOW);
-    fanState = false;
-  }
-
-  // Display fan status
-  String fanStatus = fanState ? "Fan: ON " : "Fan: OFF";
-  writeInLcd(0, 1, fanStatus);
-  lcd.clear();
-
-  String heaterStatus;
-  // Heater control logic
-    if (temperature <=TEMP_LOW) {
-    digitalWrite(HEATER_PIN, HIGH); // Heater ON
-    heaterStatus = "Heater ON";
-  } 
-  else if (temperature >= TEMP_HIGH) {
-    digitalWrite(HEATER_PIN, LOW); // Heater OFF
-    heaterStatus = "Heater OFF";
-  }
-  writeInLcd(0, 0, heaterStatus);
-
-  delay(1500);
-
-  // Load Cell 
-  if (!initialWeightTaken){
-  if (currentWeight > 1.0){
-    initialWeight = currentWeight;
-    initialWeightTaken = true;
-    Serial.print("Initial Weight recorded: ");
-    Serial.print(initialWeight, 13);
-    Serial.print(" g");
+    if (isnan(temp) || isnan(humidity)) {   // Checks DHT integrity
+        Serial.println("DHT Sensor error!");
+        displayInLcd(0, 0, "DHT error!");
+        dhtStatus = false;
     }
-    } else{
-      float WeightLossPercentage = ((initialWeight - currentWeight) / initialWeight) * 100;
-    lcd.clear();
-    String per_weight = "Weight Loss :" + String(WeightLossPercentage, 2) + "%" + " Current Weight: " + String(currentWeight, 2) + "g";
-    writeInLcd(0, 1, per_weight);
-
-      Serial.print(millis()/ 1000);
-      Serial.print( " s");
-      Serial.println(currentWeight, 2);
-      Serial.print(" g");
-      Serial.println(WeightLossPercentage,2);
-      Serial.print(" %");
-
+    else {
+        dhtStatus = true;
+        dhtStr = "T: " + String(temp, 1) + "C H: " + String(humidity, 1) + "%";
+        // Serial.println(dhtStr);
     }
+
+    if (temp > highTemp) {      // Validates the threshold
+        digitalWrite(FAN_PIN, HIGH);
+        digitalWrite(HTR_PIN, LOW);
+        fanHtrStr = "FAN: ON HTR: OFF";
+        // Serial.println("Fan ON, Heater OFF");
+    }
+    else if (temp < lowTemp) {
+        digitalWrite(FAN_PIN, LOW);
+        digitalWrite(HTR_PIN, HIGH);
+        fanHtrStr = "FAN: OFF HTR: ON";
+        // Serial.println("Fan OFF, Heater ON");
+    }
+    else {
+        fanHtrStr = "FAN:OFF HTR: OFF";
+    }
+
+    // DHT and fan/heater display every 1 second
+    if (currentMillis - lastActionDHT >= 1000) {
+        lastActionDHT = currentMillis;
+        displayInLcd(0, 0, dhtStr);
+        displayInLcd(0, 1, fanHtrStr);
+    }
+
+    // Load cell display every 2 seconds
+    cellStr = "Weight: " + String(currentWeight, 1) + " kg";
+    weightLoss = ((intialWeight - currentWeight) / (intialWeight)) * 100;
+    lossStr = "%loss: " + String(weightLoss, 2) + "%";
+    if (currentMillis - lastActionCell >= 2000) {
+        lastActionCell = currentMillis;
+        lcd.clear();
+        displayInLcd(0, 0, cellStr);
+        displayInLcd(0, 1, lossStr);
+        Serial.println("Load cell displayed!");
+    }
+
+    // What should the finalWeight be? (When the sardines have dried)... Its code follows.
 }
 
-
-
-// Function to write to LCD
-void writeInLcd(int col, int row, String message) {
-  lcd.setCursor(col, row);
-  lcd.print(message);
-  delay(1000);
+void displayInLcd(int col, int row, String message) {
+    lcd.setCursor(col, row);
+    lcd.print(message);
 }
