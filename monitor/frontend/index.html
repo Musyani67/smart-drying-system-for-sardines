@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Sardine Dryer Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin: 0; padding: 16px; background: #f7fafc }
+.card{ background:#fff; border-radius:10px; padding:16px; box-shadow:0 6px 18px rgba(0,0,0,0.06); margin-bottom:12px }
+.row{ display:flex; gap:12px; flex-wrap:wrap }
+.col{ flex:1 1 300px }
+h1{ margin:0 0 12px 0 }
+.big{ font-size:2.2rem; font-weight:700 }
+.muted{ color:#666 }
+button{ padding:8px 12px; border-radius:8px; border:none; cursor:pointer }
+</style>
+</head>
+<body>
+<h1>Sardine Dryer Monitor</h1>
+<div class="row">
+<div class="col card">
+<div>Live status</div>
+<div style="display:flex;align-items:baseline;gap:16px">
+<div>
+<div class="muted">Temperature</div>
+<div id="temp" class="big">-- °C</div>
+</div>
+<div>
+<div class="muted">Humidity</div>
+<div id="hum" class="big">-- %</div>
+</div>
+<div>
+<div class="muted">Weight</div>
+<div id="weight" class="big">-- kg</div>
+</div>
+</div>
+<div style="margin-top:12px">
+<button id="toggle-fan">Toggle Fan</button>
+<button id="toggle-heater">Toggle Heater</button>
+</div>
+<div style="margin-top:8px" class="muted">Last: <span id="last">--</span></div>
+</div>
+
+
+<div class="col card">
+<canvas id="chart" height="160"></canvas>
+</div>
+</div>
+
+
+<script>
+const tempEl = document.getElementById('temp');
+const humEl = document.getElementById('hum');
+const weightEl = document.getElementById('weight');
+const lastEl = document.getElementById('last');
+const toggleFan = document.getElementById('toggle-fan');
+const toggleHeater = document.getElementById('toggle-heater');
+
+
+const ctx = document.getElementById('chart').getContext('2d');
+
+const data = {
+labels: [],
+datasets: [
+{ label: 'Temp (°C)', data: [], yAxisID: 'y', tension:0.3 },
+{ label: 'Humidity (%)', data: [], yAxisID: 'y1', tension:0.3 }
+]
+};
+
+
+const chart = new Chart(ctx, {
+type: 'line',
+data,
+options: {
+responsive: true,
+scales: {
+y: { type:'linear', position:'left' },
+y1: { type:'linear', position:'right', grid: { drawOnChartArea:false } }
+}
+}
+});
+
+
+function pushPoint(label, temp, hum) {
+data.labels.push(label);
+data.datasets[0].data.push(temp);
+data.datasets[1].data.push(hum);
+if (data.labels.length > 30) {
+data.labels.shift();
+data.datasets.forEach(ds => ds.data.shift());
+}
+chart.update('none');
+}
+
+
+// try WebSocket first
+const socket = io();
+socket.on('connect', () => console.log('ws connected'));
+socket.on('status', (s) => {
+tempEl.textContent = s.temperature.toFixed(1) + ' °C';
+humEl.textContent = s.humidity.toFixed(0) + ' %';
+weightEl.textContent = s.weight_kg.toFixed(2) + ' kg';
+lastEl.textContent = new Date(s.lastUpdate).toLocaleString();
+toggleFan.textContent = s.fan ? 'Fan: ON (click to toggle)' : 'Fan: OFF (click to toggle)';
+toggleHeater.textContent = s.heater ? 'Heater: ON (click to toggle)' : 'Heater: OFF (click to toggle)';
+pushPoint(new Date(s.lastUpdate).toLocaleTimeString(), s.temperature, s.humidity);
+});
+
+
+// Fallback polling (in case WS blocked)
+async function poll() {
+try {
+const r = await fetch('/api/status');
+if (!r.ok) throw new Error('http error');
+const s = await r.json();
+tempEl.textContent = s.temperature.toFixed(1) + ' °C';
+humEl.textContent = s.humidity.toFixed(0) + ' %';
+weightEl.textContent = s.weight_kg.toFixed(2) + ' kg';
+lastEl.textContent = new Date(s.lastUpdate).toLocaleString();
+toggleFan.textContent = s.fan ? 'Fan: ON (click to toggle)' : 'Fan: OFF (click to toggle)';
+toggleHeater.textContent = s.heater ? 'Heater: ON (click to toggle)' : 'Heater: OFF (click to toggle)';
+pushPoint(new Date(s.lastUpdate).toLocaleTimeString(), s.temperature, s.humidity);
+} catch (e) {
+console.warn('poll failed', e);
+}
+}
+
+
+// start polling every 5s as backup
+setInterval(poll, 5000);
+poll();
+
+
+// actuator toggles
+toggleFan.addEventListener('click', async () => {
+// send toggle request to server
+const current = toggleFan.textContent.includes('ON');
+await fetch(`/api/actuators/fan/${current ? 'false' : 'true'}`, { method: 'POST' });
+});
+toggleHeater.addEventListener('click', async () => {
+const current = toggleHeater.textContent.includes('ON');
+await fetch(`/api/actuators/heater/${current ? 'false' : 'true'}`, { method: 'POST' });
+});
+</script>
+</body>
+</html>

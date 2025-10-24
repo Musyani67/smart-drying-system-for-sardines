@@ -1,3 +1,5 @@
 /proteus_circuit/Project Backups
 /proteus_circuit/*.workspace
 /Main/*.hex
+monitor/node_modules/
+**/node_modules/
